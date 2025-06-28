@@ -6,13 +6,37 @@
 //
 
 import SwiftUI
+import SwiftData
 
-struct Todo: View {
-    var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+@Model
+class Todo{
+    private(set) var taskID: String = UUID().uuidString
+    var task: String
+    var isCompleted: Bool = false
+    var priority: Priority = Priority.normal
+    var lastUpdated: Date = Date.now
+    
+    init(task: String,  priority: Priority) {
+        self.task = task
+        self.priority = priority
+    }
+    
+}
+
+enum Priority: String, CaseIterable, Codable {
+    case normal = "Normal"
+    case medium = "Medium"
+    case high = "High"
+    
+    var color: Color {
+        switch self {
+        case .normal:
+            return .green
+        case .medium:
+            return .yellow
+        case .high:
+            return .red
+        }
     }
 }
 
-#Preview {
-    Todo()
-}

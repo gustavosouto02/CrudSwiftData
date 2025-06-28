@@ -7,27 +7,23 @@
 
 import WidgetKit
 import SwiftUI
+import SwiftData
+import AppIntents
 
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(date: Date(), emoji: "😀")
+        SimpleEntry(date: Date())
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> ()) {
-        let entry = SimpleEntry(date: Date(), emoji: "😀")
+        let entry = SimpleEntry(date: Date())
         completion(entry)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> ()) {
         var entries: [SimpleEntry] = []
-
-        // Generate a timeline consisting of five entries an hour apart, starting from the current date.
-        let currentDate = Date()
-        for hourOffset in 0 ..< 5 {
-            let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate)!
-            let entry = SimpleEntry(date: entryDate, emoji: "😀")
-            entries.append(entry)
-        }
+        let entry = SimpleEntry(date: .now)
+        entries.append(entry)
 
         let timeline = Timeline(entries: entries, policy: .atEnd)
         completion(timeline)
@@ -40,20 +36,50 @@ struct Provider: TimelineProvider {
 
 struct SimpleEntry: TimelineEntry {
     let date: Date
-    let emoji: String
 }
 
 struct TodoListEntryView : View {
     var entry: Provider.Entry
-
+    
+    @Query(todoDescriptor, animation: .snappy) private var activeList: [Todo]
     var body: some View {
         VStack {
-            Text("Time:")
-            Text(entry.date, style: .time)
-
-            Text("Emoji:")
-            Text(entry.emoji)
+            ForEach(activeList){ todo in
+                HStack(spacing: 10){
+                    Button(intent: ToggleButton(id: todo.taskID)){
+                        Image(systemName: "circle")
+                    }
+                    .font(.callout)
+                    .tint(todo.priority.color.gradient)
+                    .buttonBorderShape(.circle)
+                    
+                    Text(todo.task)
+                        .font(.callout)
+                        .lineLimit(1)
+                    
+                    Spacer(minLength: 0)
+                }
+                .transition(.push(from: .bottom))
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay{
+            if activeList.isEmpty{
+                Text("No Tasks🥳")
+                    .font(.callout)
+                    .transition(.push(from: .bottom))
+            }
+        }
+    }
+    
+    static var todoDescriptor: FetchDescriptor<Todo> {
+        let predicate = #Predicate<Todo> { !$0.isCompleted }
+        let sort = [SortDescriptor(\Todo.lastUpdated, order: .reverse)]
+        
+        var descriptor = FetchDescriptor(predicate: predicate, sortBy: sort)
+        descriptor.fetchLimit = 3
+        return descriptor
+            
     }
 }
 
@@ -62,23 +88,40 @@ struct TodoList: Widget {
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in
-            if #available(iOS 17.0, *) {
-                TodoListEntryView(entry: entry)
-                    .containerBackground(.fill.tertiary, for: .widget)
-            } else {
-                TodoListEntryView(entry: entry)
-                    .padding()
-                    .background()
-            }
+            TodoListEntryView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+                .modelContainer(for: Todo.self)
         }
-        .configurationDisplayName("My Widget")
-        .description("This is an example widget.")
+        .supportedFamilies([.systemMedium])
+        .configurationDisplayName("Tasks")
+        .description("This is a Todo List.")
     }
 }
 
-#Preview(as: .systemSmall) {
-    TodoList()
-} timeline: {
-    SimpleEntry(date: .now, emoji: "😀")
-    SimpleEntry(date: .now, emoji: "🤩")
+struct ToggleButton: AppIntent{
+    static var title: LocalizedStringResource = .init(stringLiteral: "Toggle's Todo State")
+    
+    @Parameter(title: "Todo ID")
+    var id: String
+    
+    init(){
+        
+    }
+    
+    init(id: String){
+        self.id = id
+    }
+    
+    func perform() async throws -> some IntentResult {
+        let context = try ModelContext(.init(for: Todo.self))
+        
+        let descriptor = FetchDescriptor(predicate: #Predicate<Todo> { $0.taskID == id })
+        if let todo = try context.fetch(descriptor).first {
+            todo.isCompleted = true
+            todo.lastUpdated = .now
+            
+            try context.save()
+        }
+        return .result()
+    }
 }
